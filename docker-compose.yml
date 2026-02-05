@@ -1,0 +1,84 @@
+version: "3.9"
+
+services:
+  # ============================
+  # PostgreSQL (Temporal)
+  # ============================
+  temporal-postgres:
+    image: postgres:15
+    container_name: temporal-postgres
+    environment:
+      POSTGRES_USER: temporal
+      POSTGRES_PASSWORD: temporal
+      POSTGRES_DB: temporal
+    ports:
+      - "5440:5432" # ⚠️ port non standard
+    volumes:
+      - temporal_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U temporal"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ============================
+  # Temporal Server
+  # ============================
+  temporal:
+    image: temporalio/auto-setup:1.22
+    container_name: temporal-server
+    depends_on:
+      temporal-postgres:
+        condition: service_healthy
+    environment:
+      DB: postgresql
+      DB_PORT: 5432
+      POSTGRES_USER: temporal
+      POSTGRES_PWD: temporal
+      POSTGRES_SEEDS: temporal-postgres
+    ports:
+      - "7233:7233"
+    healthcheck:
+      test: ["CMD", "tctl", "--address", "localhost:7233", "namespace", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # ============================
+  # Temporal UI
+  # ============================
+  temporal-ui:
+    image: temporalio/ui:2.22.0
+    container_name: temporal-ui
+    depends_on:
+      temporal:
+        condition: service_healthy
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_CORS_ORIGINS: http://localhost:3000
+    ports:
+      - "8001:8080" # ⚠️ UI Temporal
+
+  # ============================
+  # RabbitMQ (with management UI)
+  # ============================
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    container_name: rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: rabbit
+      RABBITMQ_DEFAULT_PASS: rabbit
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  temporal_pg_data:
+  rabbitmq_data:
